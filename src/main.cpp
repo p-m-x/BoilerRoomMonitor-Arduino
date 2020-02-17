@@ -36,6 +36,9 @@ uint8_t tempSensorsCount;
 volatile long hotWaterCounter;
 volatile long coldWaterCounter;
 
+float hotWaterTotalVolumeLiters = 0.0;
+float coldWaterTotalVolumeLiters = 0.0;
+
 void hotWaterISR();
 void coldWaterISR();
 float getWaterVolume(long sensorPulses);
@@ -91,10 +94,12 @@ void loop()
       coldWaterCounter = 0;      
     }
 
-    send(waterVolumeMsg.setSensor(20).set(getWaterVolume(hotWaterImpulses), 2));
+    hotWaterTotalVolumeLiters += getWaterVolume(hotWaterImpulses);
+    send(waterVolumeMsg.setSensor(20).set(hotWaterTotalVolumeLiters, 1));
     send(waterFlowMsg.setSensor(20).set(getWaterFlow(hotWaterImpulses, realEplasedTime), 2));
     
-    send(waterVolumeMsg.setSensor(21).set(getWaterVolume(coldWaterImpulses), 2));
+    coldWaterTotalVolumeLiters += getWaterVolume(coldWaterImpulses);
+    send(waterVolumeMsg.setSensor(21).set(coldWaterTotalVolumeLiters, 1));
     send(waterFlowMsg.setSensor(21).set(getWaterFlow(coldWaterImpulses, realEplasedTime), 2));
 
 
