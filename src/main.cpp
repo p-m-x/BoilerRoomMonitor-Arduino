@@ -112,7 +112,6 @@ void loop()
             continue;
           }            
         } 
-        // error
       }
     }
   }
