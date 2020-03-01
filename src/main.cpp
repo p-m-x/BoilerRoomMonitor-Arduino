@@ -12,7 +12,8 @@
 #include <util/atomic.h>
 
 #define COMPARE_TEMP 1 // Send temperature only if changed? 1 = Yes 0 = No
-#define ONE_WIRE_BUS 8 // Pin where dallase sensor is connected 
+#define ONE_WIRE_BUS 4 // Pin where dallase sensor is connected 
+#define STATUS_LED 6
 #define SLEEP_TIME_MS 1000 // Sleep time between reads (in milliseconds)
 
 #define HOT_WATER_INTERRUPT_PIN 2
@@ -59,20 +60,26 @@ float getSensorLastValue(uint8_t sensorID);
 
 void before()
 {
-  
+  pinMode(STATUS_LED, OUTPUT);
+  digitalWrite(STATUS_LED, LOW);
 }
 
 void setup()  
 { 
-   Serial.begin(MY_BAUD_RATE);
+  pinMode(HOT_WATER_INTERRUPT_PIN, INPUT_PULLUP);
+  pinMode(COLD_WATER_INTERRUPT_PIN, INPUT_PULLUP);
+  
+  Serial.begin(MY_BAUD_RATE);
 
-   // requestTemperatures() will not block current thread
-   tempSensors.setCheckForConversion(true);
-   tempSensorsCount = tempSensorDiscovery.discover(tempSensorsIndicies);   
+  // requestTemperatures() will not block current thread
+  tempSensors.setCheckForConversion(true);
+  tempSensorsCount = tempSensorDiscovery.discover(tempSensorsIndicies);   
 
-   // Set interrupts for water flow sensors
-   attachInterrupt(digitalPinToInterrupt(HOT_WATER_INTERRUPT_PIN), hotWaterISR, FALLING);
-   attachInterrupt(digitalPinToInterrupt(COLD_WATER_INTERRUPT_PIN), coldWaterISR, FALLING);
+  // Set interrupts for water flow sensors
+  attachInterrupt(digitalPinToInterrupt(HOT_WATER_INTERRUPT_PIN), hotWaterISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(COLD_WATER_INTERRUPT_PIN), coldWaterISR, FALLING);
+  _delay_ms(1000);
+  digitalWrite(STATUS_LED, HIGH);
 }
 
 void presentation() {
@@ -113,23 +120,26 @@ void loop()
     float hotWaterFlow = getWaterFlow(hotWaterTotalVolumeLiters - getSensorLastValue(SV_HOT_WATER_VOLUME), realEplasedTime);
 
     if (checkIfSensorValueChanged(SV_HOT_WATER_VOLUME, hotWaterTotalVolumeLiters)) {
+      digitalWrite(STATUS_LED, LOW);
       send(waterVolumeMsg.setSensor(HOT_WATER_METER_SENSOR_ID).set(hotWaterTotalVolumeLiters, 3));
       setSensorLastValue(SV_HOT_WATER_VOLUME, hotWaterTotalVolumeLiters);
     }
     if (checkIfSensorValueChanged(SV_HOT_WATER_FLOW, hotWaterFlow)) {
+      digitalWrite(STATUS_LED, LOW);
       send(waterFlowMsg.setSensor(HOT_WATER_METER_SENSOR_ID).set(hotWaterFlow, 2));
       setSensorLastValue(SV_HOT_WATER_FLOW, hotWaterFlow);
     }
-
     
     coldWaterTotalVolumeLiters = coldWaterTotalVolumeLiters + getWaterVolume(coldWaterImpulses);
     float coldWaterFlow = getWaterFlow(coldWaterTotalVolumeLiters - getSensorLastValue(SV_COLD_WATER_VOLUME), realEplasedTime);
 
     if (checkIfSensorValueChanged(SV_COLD_WATER_VOLUME, coldWaterTotalVolumeLiters)) {
+      digitalWrite(STATUS_LED, LOW);
       send(waterVolumeMsg.setSensor(COLD_WATER_METER_SENSOR_ID).set(coldWaterTotalVolumeLiters, 3));
       setSensorLastValue(SV_COLD_WATER_VOLUME, coldWaterTotalVolumeLiters);
     }
     if (checkIfSensorValueChanged(SV_COLD_WATER_FLOW, coldWaterFlow)) {
+      digitalWrite(STATUS_LED, LOW);
       send(waterFlowMsg.setSensor(COLD_WATER_METER_SENSOR_ID).set(coldWaterFlow, 2));
       setSensorLastValue(SV_COLD_WATER_FLOW, coldWaterFlow);
     }
@@ -144,6 +154,7 @@ void loop()
           // Fetch and round temperature to one decimal
           float temperature = static_cast<float>(static_cast<int>((getControllerConfig().isMetric?tempSensors.getTempCByIndex(i):tempSensors.getTempFByIndex(i)) * 10.)) / 10.;
           if (temperature != -127.00 && temperature != 85.00 && checkIfSensorValueChanged(i, temperature)) {
+            digitalWrite(STATUS_LED, LOW);
             setSensorLastValue(i, temperature);
             send(temperatureMsg.setSensor(i).set(temperature, 1));
             continue;
@@ -151,6 +162,7 @@ void loop()
         } 
       }
     }
+    digitalWrite(STATUS_LED, HIGH);
   }
 }
 
