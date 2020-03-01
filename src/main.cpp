@@ -62,6 +62,7 @@ void before()
 {
   pinMode(STATUS_LED, OUTPUT);
   digitalWrite(STATUS_LED, LOW);
+  tempSensorsCount = tempSensorDiscovery.discover(tempSensorsIndicies); 
 }
 
 void setup()  
@@ -72,8 +73,7 @@ void setup()
   Serial.begin(MY_BAUD_RATE);
 
   // requestTemperatures() will not block current thread
-  tempSensors.setCheckForConversion(true);
-  tempSensorsCount = tempSensorDiscovery.discover(tempSensorsIndicies);   
+  tempSensors.setCheckForConversion(true);    
 
   // Set interrupts for water flow sensors
   attachInterrupt(digitalPinToInterrupt(HOT_WATER_INTERRUPT_PIN), hotWaterISR, FALLING);
