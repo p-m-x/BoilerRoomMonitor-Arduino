@@ -14,7 +14,7 @@
 #define COMPARE_TEMP 1 // Send temperature only if changed? 1 = Yes 0 = No
 #define ONE_WIRE_BUS 4 // Pin where dallase sensor is connected 
 #define STATUS_LED 6
-#define SLEEP_TIME_MS 1000 // Sleep time between reads (in milliseconds)
+#define SLEEP_TIME_MS 10000 // Sleep time between reads (in milliseconds)
 #define FULL_SEND_INTERVAL 60000
 
 #define HOT_WATER_INTERRUPT_PIN 2
@@ -37,9 +37,10 @@ long lastFullSendTime = 0;
 bool receivedConfig = false;
 bool metric = true;
 // Initialize temperature message
-MyMessage temperatureMsg(0, V_TEMP);
-MyMessage waterFlowMsg(0, V_FLOW);
-MyMessage waterVolumeMsg(0, V_VOLUME);
+MyMessage msgTemperature(0, V_TEMP);
+MyMessage msgWaterFlow(0, V_FLOW);
+MyMessage msgWaterVolume(0, V_VOLUME);
+MyMessage msgInfo(0, V_TEXT);
 
 uint8_t tempSensorsIndicies[TEMP_DISCOVERY_MAX_ATTACHED_DS18B20];
 uint8_t tempSensorsCount;
@@ -51,6 +52,7 @@ float hotWaterTotalVolumeLiters = 0.000;
 float coldWaterTotalVolumeLiters = 0.000;
 
 float lastValues[25];
+boolean sensorsInitialized = false;
 
 void hotWaterISR();
 void coldWaterISR();
@@ -59,6 +61,7 @@ float getWaterFlow(float flowedVolume, long inTime);
 bool checkIfSensorValueChanged(uint8_t sensorID, float currentValue);
 void setSensorLastValue(uint8_t sensorID, float value);
 float getSensorLastValue(uint8_t sensorID);
+void receive(const MyMessage &message);
 
 void before()
 {
@@ -86,20 +89,49 @@ void setup()
 
 void presentation() {
   // Send the sketch version information to the gateway and Controller
-  sendSketchInfo("Boiler room monitor", "0.0.1");
-
-  // Send initial temp sensor
+  sendSketchInfo("Boiler room monitor", "0.0.2");
   for (uint8_t i=0; i<tempSensorsCount; i++) {
-     present(tempSensorsIndicies[i], S_TEMP);
+    present(i, S_TEMP, "Temperature sensor");     
+    present(i, S_INFO, "Info");
   }
   // Hot water flow meter
-  present(HOT_WATER_METER_SENSOR_ID, S_WATER);
+  present(HOT_WATER_METER_SENSOR_ID, S_WATER, "Hot water flow meter");
   // Cold water flow meter
-  present(COLD_WATER_METER_SENSOR_ID, S_WATER);
+  present(COLD_WATER_METER_SENSOR_ID, S_WATER, "Cold water flow meter");
+  
 }
 
 void loop()     
 {     
+
+  if (!sensorsInitialized) {
+    Serial.println("Sending initial value");
+    for (uint8_t i=0; i<tempSensorsCount; i++) {
+      send(msgTemperature.setSensor(i).set(0));   
+    }
+    send(msgWaterFlow.setSensor(HOT_WATER_METER_SENSOR_ID).set(0));
+    send(msgWaterFlow.setSensor(COLD_WATER_METER_SENSOR_ID).set(0));
+
+    send(msgWaterVolume.setSensor(HOT_WATER_METER_SENSOR_ID).set(0));
+    send(msgWaterVolume.setSensor(COLD_WATER_METER_SENSOR_ID).set(0));
+
+    Serial.println("Requesting initial value from controller");
+    for (uint8_t i=0; i<tempSensorsCount; i++) {
+      request(i, V_TEMP);
+      wait(2000, C_SET, V_TEMP);
+    }
+
+    request(HOT_WATER_METER_SENSOR_ID, V_FLOW);
+    wait(2000, C_SET, V_FLOW);
+    request(COLD_WATER_METER_SENSOR_ID, V_FLOW);
+    wait(2000, C_SET, V_FLOW);
+    request(HOT_WATER_METER_SENSOR_ID, V_VOLUME);
+    wait(2000, C_SET, V_VOLUME);    
+    request(COLD_WATER_METER_SENSOR_ID, V_VOLUME);
+    wait(2000, C_SET, V_VOLUME);   
+
+    return;
+  }
   // Fetch temperatures from Dallas sensors
   tempSensors.requestTemperatures();
   unsigned long realEplasedTime = millis() - lastSendTime;
@@ -108,6 +140,7 @@ void loop()
     fullSend = true;
     lastFullSendTime = millis();
     sendHeartbeat();
+    Serial.println("FULL SEND");
   }
   
   if (realEplasedTime > SLEEP_TIME_MS) {    
@@ -129,12 +162,12 @@ void loop()
 
     if (checkIfSensorValueChanged(SV_HOT_WATER_VOLUME, hotWaterTotalVolumeLiters) || fullSend) {
       digitalWrite(STATUS_LED, LOW);
-      send(waterVolumeMsg.setSensor(HOT_WATER_METER_SENSOR_ID).set(hotWaterTotalVolumeLiters, 3));
+      send(msgWaterVolume.setSensor(HOT_WATER_METER_SENSOR_ID).set(hotWaterTotalVolumeLiters, 3));
       setSensorLastValue(SV_HOT_WATER_VOLUME, hotWaterTotalVolumeLiters);
     }
     if (checkIfSensorValueChanged(SV_HOT_WATER_FLOW, hotWaterFlow) || fullSend) {
       digitalWrite(STATUS_LED, LOW);
-      send(waterFlowMsg.setSensor(HOT_WATER_METER_SENSOR_ID).set(hotWaterFlow, 2));
+      send(msgWaterFlow.setSensor(HOT_WATER_METER_SENSOR_ID).set(hotWaterFlow, 2));
       setSensorLastValue(SV_HOT_WATER_FLOW, hotWaterFlow);
     }
     
@@ -143,12 +176,12 @@ void loop()
 
     if (checkIfSensorValueChanged(SV_COLD_WATER_VOLUME, coldWaterTotalVolumeLiters) || fullSend) {
       digitalWrite(STATUS_LED, LOW);
-      send(waterVolumeMsg.setSensor(COLD_WATER_METER_SENSOR_ID).set(coldWaterTotalVolumeLiters, 3));
+      send(msgWaterVolume.setSensor(COLD_WATER_METER_SENSOR_ID).set(coldWaterTotalVolumeLiters, 3));
       setSensorLastValue(SV_COLD_WATER_VOLUME, coldWaterTotalVolumeLiters);
     }
     if (checkIfSensorValueChanged(SV_COLD_WATER_FLOW, coldWaterFlow) || fullSend) {
       digitalWrite(STATUS_LED, LOW);
-      send(waterFlowMsg.setSensor(COLD_WATER_METER_SENSOR_ID).set(coldWaterFlow, 2));
+      send(msgWaterFlow.setSensor(COLD_WATER_METER_SENSOR_ID).set(coldWaterFlow, 2));
       setSensorLastValue(SV_COLD_WATER_FLOW, coldWaterFlow);
     }
     
@@ -161,19 +194,39 @@ void loop()
         if (tempSensors.isConnected(addr)) {
           // Fetch and round temperature to one decimal
           float temperature = static_cast<float>(static_cast<int>((getControllerConfig().isMetric?tempSensors.getTempCByIndex(i):tempSensors.getTempFByIndex(i)) * 10.)) / 10.;
-          if (temperature != -127.00 && temperature != 85.00 && (checkIfSensorValueChanged(i, temperature) || fullSend)) {
+          if (checkIfSensorValueChanged(i, temperature) || fullSend) {
             digitalWrite(STATUS_LED, LOW);
             setSensorLastValue(i, temperature);
-            send(temperatureMsg.setSensor(i).set(temperature, 1));
-            continue;
-          }            
-        } 
+            if (temperature != -127.00 && temperature != 85.00) {                            
+              send(msgTemperature.setSensor(i).set(temperature, 1));
+              send(msgInfo.setSensor(i).set(""));
+              continue;
+            } else {
+              send(msgInfo.setSensor(i).set("Read error"));
+            }
+          } 
+        } else {
+          setSensorLastValue(i, -127.00);
+          send(msgInfo.setSensor(i).set("Not connected"));
+        }
       }
     }
     digitalWrite(STATUS_LED, HIGH);
   }
 }
 
+void receive(const MyMessage &message) 
+{
+  if (message.isAck()) {
+     Serial.println("This is an ack from gateway");
+     return;
+  }
+
+  if (!sensorsInitialized && message.getType() == V_TEMP) {
+    Serial.println("Receiving initial value from controller");
+    sensorsInitialized = true;
+  }
+}
 
 void hotWaterISR() {
   hotWaterCounter++;
